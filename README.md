@@ -26,7 +26,12 @@ It publishes the following:
 ```
 /desired_goal
 ```
-which is a `PointStamped` 
+which is a `PointStamped` that publishes the current desired goal obtained by our intention recognition method,
+```
+/predicted_trajectory
+```
+which is a `PoseArray` that publishes the currently predicted trajectory obtained by running gpmp2 starting from the current position with the desired goal.
+
 
 
 
