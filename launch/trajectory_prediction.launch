@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  
+<node name="map_server" pkg="map_server" type="map_server" args="$(find trajectory_prediction)/scripts/map.yaml"/>
+
+<node name="static_transform_publisher" pkg="tf" type="static_transform_publisher" args="0 0 0 0 0 0 1 vicon/world map 100"/>
+
+
+<node pkg="rosbag" type="play" name="player" output="screen" args="$(find trajectory_prediction)/bags/merged_map4_run3.bag"/>
+
+</launch>
