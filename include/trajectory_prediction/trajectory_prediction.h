@@ -52,6 +52,9 @@ class TrajectoryPrediction {
                             const gtsam::NonlinearOptimizerParams &params,
                                 bool iter_no_increase);
 
+        void createSettings(float total_time = 10, int total_time_step = 10);
+
+
     private:
         ros::NodeHandle node_;
         std::string goal_topic_, predicted_traj_topic_, global_frame_;
@@ -63,6 +66,12 @@ class TrajectoryPrediction {
                                                             {{-0.73, -2.4}}, 
                                                             {{-1.82, 0.62}}}};
         std::array<double, 2> pose_past_ = {0, 0};
+
+        // Graph params
+        double cell_size_ = 0.1;
+        gpmp2::TrajOptimizerSetting setting_;
+        double delta_t_, inter_dt_;
+
         double min_distance_ = 0.8;
 
 };
