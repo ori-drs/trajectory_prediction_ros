@@ -9,6 +9,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
 
   node_.param<std::string>("goal_topic", goal_topic_, "desired_goal");
   node_.param<std::string>("predicted_traj_topic", predicted_traj_topic_, "predicted_path");
+  node_.param<std::string>("global_frame", global_frame_, "/vicon/world");
 
   desired_goal_pub_ = node_.advertise<geometry_msgs::PointStamped>(goal_topic_, 100);
   predicted_traj_pub = node_.advertise<geometry_msgs::PoseArray>(predicted_traj_topic_, 100);
@@ -108,8 +109,7 @@ void TrajectoryPrediction::personPoseCallback( const geometry_msgs::TransformSta
   std::array<double, 2> pose_current = {msg->transform.translation.x,
                                         msg->transform.translation.y};
   double goal_x, goal_y;
-  geometry_msgs::PointStamped desired_goal_msg;
-  desired_goal_msg.header.frame_id = "/vicon/world";
+
   double human_ori = std::atan2(pose_current[1] - pose_past_[1],
                                 pose_current[0] - pose_past_[0]);
   pose_past_ = pose_current;
@@ -132,10 +132,6 @@ void TrajectoryPrediction::personPoseCallback( const geometry_msgs::TransformSta
       min_theta = std::abs(goal_theta - human_ori);
     }
   }
-  desired_goal_msg.point.x = goal_x;
-  desired_goal_msg.point.y = goal_y;
-  desired_goal_pub_.publish(desired_goal_msg);
-  gpmp2::PointRobot pR = gpmp2::PointRobot(2, 1);
 
   gpmp2::PointRobotModel robot = gpmp2::RobotModel<gpmp2::PointRobot>();
 
@@ -152,7 +148,7 @@ void TrajectoryPrediction::personPoseCallback( const geometry_msgs::TransformSta
   setting_.set_total_step(10);
   
   geometry_msgs::PoseArray predicted_trajectory;
-  predicted_trajectory.header.frame_id = "/vicon/world";
+  predicted_trajectory.header.frame_id = global_frame_;
   
   gtsam::Vector predicted_pose;
   geometry_msgs::Pose p;
@@ -164,6 +160,14 @@ void TrajectoryPrediction::personPoseCallback( const geometry_msgs::TransformSta
   }
 
   predicted_traj_pub.publish(predicted_trajectory);
+
+  // Publish a msg indicating estimated goal of the person
+  geometry_msgs::PointStamped desired_goal_msg;
+  desired_goal_msg.header.frame_id = global_frame_;
+  desired_goal_msg.point.x = goal_x;
+  desired_goal_msg.point.y = goal_y;
+  desired_goal_pub_.publish(desired_goal_msg);
+
 }
 
 gtsam::Values TrajectoryPrediction::optimize(std::shared_ptr<gtsam::NonlinearOptimizer> opt, const gtsam::NonlinearOptimizerParams &params, bool iter_no_increase) {

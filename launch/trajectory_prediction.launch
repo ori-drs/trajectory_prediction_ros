@@ -4,6 +4,9 @@
 <param name="goal_topic" type="string" value="/desired_goal" />
 <param name="predicted_traj_topic" type="string" value="/predicted_path" />
 
+<!-- Global frame of the robot. In rosbags this is the vicon world frame -->
+<param name="global_frame_" type="string" value="/vicon/world" />
+
 <arg name="use_rosbag" default="0" />
 <!-- <arg name="rosbag_path" default="$(find trajectory_prediction)/bags/merged_map4_run3.bag" /> -->
 

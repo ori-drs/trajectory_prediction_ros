@@ -54,7 +54,7 @@ class TrajectoryPrediction {
 
     private:
         ros::NodeHandle node_;
-        std::string goal_topic_, predicted_traj_topic_;
+        std::string goal_topic_, predicted_traj_topic_, global_frame_;
         ros::Subscriber sub_;
         ros::Publisher desired_goal_pub_, predicted_traj_pub;
         std::array<std::array<double, 2>, 4> possible_goals_{
