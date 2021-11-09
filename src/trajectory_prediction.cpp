@@ -1,21 +1,54 @@
 #include <trajectory_prediction/trajectory_prediction.h>
 
 TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
+
   node_ = node;
-  sub_ = node_.subscribe("/vicon/person_1/person_1", 
-                                        100,
-                                        &TrajectoryPrediction::personPoseCallback, 
-                                        this);
+
+  ROS_INFO("Initialising trajectory prediction node.");
+
 
   node_.param<std::string>("goal_topic", goal_topic_, "desired_goal");
   node_.param<std::string>("predicted_traj_topic", predicted_traj_topic_, "predicted_path");
   node_.param<std::string>("path_vis_topic", path_vis_topic_, "predicted_rviz_path");
   node_.param<std::string>("global_frame", global_frame_, "/vicon/world");
+  node_.param<std::string>("distance_field_topic", distance_field_topic_, "/distance_field_2d");
+  node_.param<std::string>("person_position_topic", person_position_topic_, "/vicon/person_1/person_1");
+  node_.param<bool>("use_rgbd", use_rgbd_, true);
+
+  node_.param<double>("resolution", resolution_, 0.05);
+  node_.param<int>("num_rows", num_rows_, 300);
+  node_.param<bool>("use_empty_distance_field", use_empty_distance_field_, true);
+
+  df_initialised_ = false;
+
+ if (use_rgbd_)
+ {
+  sub_ = node_.subscribe(person_position_topic_, 
+                                        100,
+                                        &TrajectoryPrediction::cameraPersonPoseCallback, 
+                                        this);
+ }
+ else{
+  sub_ = node_.subscribe(person_position_topic_, 
+                                    100,
+                                    &TrajectoryPrediction::viconPersonPoseCallback, 
+                                    this);
+ }
+ 
+
+
+  distance_field_sub_ = node_.subscribe(distance_field_topic_, 
+                                        100,
+                                        &TrajectoryPrediction::distanceFieldCallback, 
+                                        this);
 
   desired_goal_pub_ = node_.advertise<geometry_msgs::PointStamped>(goal_topic_, 100);
   predicted_traj_pub = node_.advertise<geometry_msgs::PoseArray>(predicted_traj_topic_, 100);
+  path_vis_pub_ = node_.advertise<nav_msgs::Path>(path_vis_topic_, 1000);
 
   createSettings();
+  ROS_INFO("Trajectory prediction node initialised.");
+
 }
 
 void TrajectoryPrediction::createSettings(float total_time, int total_time_step){
@@ -40,9 +73,25 @@ void TrajectoryPrediction::createSettings(float total_time, int total_time_step)
 gtsam::Values TrajectoryPrediction::constructGraph(const gpmp2::PointRobotModel &arm, const gtsam::Vector &start_conf, const gtsam::Vector &start_vel,
                               const gtsam::Vector &end_conf, const gtsam::Vector &end_vel) {
   gtsam::NonlinearFactorGraph graph_;
+   // TODO - Use actual data
   gtsam::Point2 origin(0.0, 0.0);
-  gtsam::Matrix data = Eigen::MatrixXd::Zero(300, 300);
-  gpmp2::PlanarSDF sdf = gpmp2::PlanarSDF(origin, cell_size_, data);
+  // gtsam::Matrix data_ptr;
+  gtsam::Matrix data = Eigen::MatrixXd::Zero(num_rows_, num_rows_);
+
+  if (!use_empty_distance_field_ && df_initialised_){
+    // origin = gtsam::Point2(0.0, 0.0);
+    data = Eigen::Map<gtsam::Matrix>(&distance_field_2d_[0], num_rows_, num_rows_) ; // Assume num_rows and num_cols are equal
+    origin = gtsam::Point2(num_rows_ * resolution_, num_rows_ * resolution_);
+  }
+  // else{
+  //   data = Eigen::Map<gtsam::Matrix>(&distance_field_2d_[0], num_rows_, num_rows_) ; // Assume num_rows and num_cols are equal
+  //   origin = gtsam::Point2(num_rows_ * resolution_, num_rows_ * resolution_);
+  // }
+
+  
+  // gtsam::Matrix data = Eigen::MatrixXd::Zero(300, 300);
+
+  gpmp2::PlanarSDF sdf = gpmp2::PlanarSDF(origin, resolution_, data);
   
   gtsam::Values init_values;
   
@@ -107,11 +156,26 @@ gtsam::Values TrajectoryPrediction::constructGraph(const gpmp2::PointRobotModel 
   return optimize(opt_ptr, *opt_params_ptr, 0);
 }
 
-void TrajectoryPrediction::personPoseCallback( const geometry_msgs::TransformStamped::ConstPtr &msg) {
+void TrajectoryPrediction::distanceFieldCallback( const std_msgs::Float32MultiArray::ConstPtr &msg) {
+  std::cout << "Updated distance field."<< std::endl;
+  df_initialised_ = true;
+  distance_field_2d_ = std::vector<double>(msg->data.begin(), msg->data.end());
+}
 
-  // 
-  std::array<double, 2> pose_current = {msg->transform.translation.x,
-                                        msg->transform.translation.y};
+void TrajectoryPrediction::viconPersonPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg) {
+  std::array<double, 2> pose_current = {msg->transform.translation.x, msg->transform.translation.y};
+                                        
+  this->plan(pose_current);
+}
+
+void TrajectoryPrediction::cameraPersonPoseCallback(const geometry_msgs::PointStamped::ConstPtr &msg) {
+  std::array<double, 2> pose_current = {msg->point.x, msg->point.y};
+
+  this->plan(pose_current);
+}
+
+void TrajectoryPrediction::plan(std::array<double, 2> pose_current) {
+                                        
   double goal_x, goal_y;
 
   double human_ori = std::atan2(pose_current[1] - pose_past_[1],

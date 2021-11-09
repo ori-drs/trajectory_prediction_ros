@@ -12,6 +12,7 @@
 #include <sstream>
 #include "ros/ros.h"
 #include "std_msgs/String.h"
+#include "std_msgs/Float32MultiArray.h"
 #include "tf/transform_listener.h"
 #include <nav_msgs/Path.h>
 
@@ -36,6 +37,7 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/slam/PriorFactor.h>
 
+
 class TrajectoryPrediction {
     public:
 
@@ -43,8 +45,12 @@ class TrajectoryPrediction {
         TrajectoryPrediction(ros::NodeHandle node);
 
         ~TrajectoryPrediction() {}
-
-        void personPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg);
+        
+        void distanceFieldCallback( const std_msgs::Float32MultiArray::ConstPtr &msg);
+        
+        void viconPersonPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg);
+        void cameraPersonPoseCallback(const geometry_msgs::PointStamped::ConstPtr &msg);
+        void plan(std::array<double, 2> pose_current);
 
         gtsam::Values constructGraph(const gpmp2::PointRobotModel &arm, const gtsam::Vector &start_conf, const gtsam::Vector &start_vel,
                                     const gtsam::Vector &end_conf, const gtsam::Vector &end_vel);
@@ -60,8 +66,8 @@ class TrajectoryPrediction {
     private:
         ros::NodeHandle node_;
         std::string goal_topic_, predicted_traj_topic_, global_frame_, path_vis_topic_, distance_field_topic_, person_position_topic_;
-        ros::Subscriber sub_;
-        ros::Publisher desired_goal_pub_, predicted_traj_pub;
+        ros::Subscriber sub_, distance_field_sub_;
+
         ros::Publisher desired_goal_pub_, predicted_traj_pub, path_vis_pub_;
         std::array<std::array<double, 2>, 4> possible_goals_{
                                                             {{{0, 4}}, 
@@ -70,14 +76,17 @@ class TrajectoryPrediction {
                                                             {{-1.82, 0.62}}}};
         std::array<double, 2> pose_past_ = {0, 0};
 
+        std::vector<double> distance_field_2d_;
+        bool use_empty_distance_field_, use_rgbd_, df_initialised_;
+        int num_rows_;
+        
         // Graph params
-        double cell_size_ = 0.1;
+        double resolution_;
         gpmp2::TrajOptimizerSetting setting_;
         double delta_t_, inter_dt_;
 
         double min_distance_ = 0.8;
 
 };
-
 
 #endif

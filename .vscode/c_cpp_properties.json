@@ -1,0 +1,45 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "",
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "includePath": [
+        "/home/mark/code/sdf_package_testing/devel/include/**",
+        "/opt/ros/melodic/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/bspline/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/bspline_opt/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/eigen_checks/include/**",
+        "/home/mark/code/sdf_package_testing/src/FIESTA/include/**",
+        "/home/mark/code/sdf_package_testing/src/finean_msgs/include/**",
+        "/home/mark/code/sdf_package_testing/src/gpu_voxels_ros/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/image_undistort/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/minkindr/minkindr/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/minkindr_ros/minkindr_conversions/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/Utils/multi_map_server/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/numpy_eigen/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/path_searching/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/plan_env/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/plan_manage/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/poly_traj/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/Utils/pose_utils/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/Utils/quadrotor_msgs/include/**",
+        "/home/mark/code/sdf_package_testing/src/robot_self_filter/include/**",
+        "/home/mark/code/sdf_package_testing/src/sdf_mp_integration/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/so3_control/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/so3_disturbance_generator/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/so3_quadrotor_simulator/include/**",
+        "/opt/ros/melodic/share/tmc_julius/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/fast_planner/traj_utils/include/**",
+        "/home/mark/code/sdf_package_testing/src/Fast-Planner/uav_simulator/Utils/uav_utils/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/voxblox/voxblox/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/voxblox/voxblox_ros/include/**",
+        "/home/mark/code/sdf_package_testing/src/voxblox/voxblox/voxblox_rviz_plugin/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS"
+    }
+  ],
+  "version": 4
+}
