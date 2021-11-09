@@ -9,6 +9,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
 
   node_.param<std::string>("goal_topic", goal_topic_, "desired_goal");
   node_.param<std::string>("predicted_traj_topic", predicted_traj_topic_, "predicted_path");
+  node_.param<std::string>("path_vis_topic", path_vis_topic_, "predicted_rviz_path");
   node_.param<std::string>("global_frame", global_frame_, "/vicon/world");
 
   desired_goal_pub_ = node_.advertise<geometry_msgs::PointStamped>(goal_topic_, 100);
@@ -172,6 +173,7 @@ void TrajectoryPrediction::personPoseCallback( const geometry_msgs::TransformSta
   desired_goal_msg.point.y = goal_y;
   desired_goal_pub_.publish(desired_goal_msg);
 
+  visualisePrediction(result, setting_.total_step);
 }
 
 gtsam::Values TrajectoryPrediction::optimize(std::shared_ptr<gtsam::NonlinearOptimizer> opt, const gtsam::NonlinearOptimizerParams &params, bool iter_no_increase) {
@@ -233,3 +235,28 @@ gtsam::Values TrajectoryPrediction::optimize(std::shared_ptr<gtsam::NonlinearOpt
       return opt->values();
     }
   }
+
+void TrajectoryPrediction::visualisePrediction(const gtsam::Values& plan, const size_t num_keys) const{
+    nav_msgs::Path path;
+    path.header.frame_id = global_frame_;
+
+    for (size_t i = 0; i < num_keys; i++)
+    {
+      gtsam::Vector pose = plan.at<gtsam::Vector>(gtsam::Symbol('x', i));
+
+      geometry_msgs::PoseStamped pose_msg;
+      pose_msg.header.frame_id = global_frame_;
+      pose_msg.pose.position.x = pose[0];
+      pose_msg.pose.position.y = pose[1]; 
+      pose_msg.pose.position.z = 0;
+      // pose_msg.pose.orientation.x = q[0];
+      // pose_msg.pose.orientation.y = q[1];
+      // pose_msg.pose.orientation.z = q[2];
+      // pose_msg.pose.orientation.w = q[3];
+
+      path.poses.push_back(pose_msg);
+
+    }
+    
+    path_vis_pub_.publish(path);
+};

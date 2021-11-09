@@ -13,6 +13,7 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
 #include "tf/transform_listener.h"
+#include <nav_msgs/Path.h>
 
 #include <gpmp2/kinematics/PointRobot.h>
 #include <gpmp2/kinematics/PointRobotModel.h>
@@ -54,12 +55,14 @@ class TrajectoryPrediction {
 
         void createSettings(float total_time = 10, int total_time_step = 10);
 
+        void visualisePrediction(const gtsam::Values& plan, const size_t num_keys) const;
 
     private:
         ros::NodeHandle node_;
-        std::string goal_topic_, predicted_traj_topic_, global_frame_;
+        std::string goal_topic_, predicted_traj_topic_, global_frame_, path_vis_topic_, distance_field_topic_, person_position_topic_;
         ros::Subscriber sub_;
         ros::Publisher desired_goal_pub_, predicted_traj_pub;
+        ros::Publisher desired_goal_pub_, predicted_traj_pub, path_vis_pub_;
         std::array<std::array<double, 2>, 4> possible_goals_{
                                                             {{{0, 4}}, 
                                                             {{1.6, -3}}, 
