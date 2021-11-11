@@ -16,10 +16,14 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
   node_.param<bool>("use_rgbd", use_rgbd_, true);
 
   node_.param<double>("resolution", resolution_, 0.05);
-  node_.param<int>("num_rows", num_rows_, 300);
+  node_.param<int>("num_rows", num_rows_, 256);
   node_.param<bool>("use_empty_distance_field", use_empty_distance_field_, true);
 
   df_initialised_ = false;
+
+  gpmp2::BodySphereVector body_spheres;
+  body_spheres.push_back(gpmp2::BodySphere(0, 0.6, Point3(0, 0, 0)));
+  robot_ = gpmp2::RobotModel<gpmp2::PointRobot>(gpmp2::PointRobot(2,1), body_spheres);
 
  if (use_rgbd_)
  {
@@ -55,111 +59,97 @@ void TrajectoryPrediction::createSettings(float total_time, int total_time_step)
   gtsam::Matrix2 Qc = 0.1 * gtsam::Matrix::Identity(2, 2);
   setting_ = gpmp2::TrajOptimizerSetting(2);
   setting_.setLM();
-  setting_.set_total_step(10);
+  setting_.set_total_step(20);
   setting_.set_total_time(10);
-  setting_.set_epsilon(0.2);
-  setting_.set_cost_sigma(0.1);
-  setting_.set_obs_check_inter(1);
-  setting_.set_conf_prior_model(0.1);
+  setting_.set_epsilon(0.3);
+  setting_.set_cost_sigma(0.2);
+  setting_.set_obs_check_inter(3);
+  setting_.set_conf_prior_model(0.001);
   setting_.set_vel_prior_model(0.001);
   setting_.set_Qc_model(Qc);
   // setting_.setVerbosityError();
   setting_.setVerbosityNone();
+  setting_.set_rel_thresh(1e-2);
 
   delta_t_ = setting_.total_time / static_cast<double>(setting_.total_step);
   inter_dt_ = delta_t_ / static_cast<double>(setting_.obs_check_inter + 1);
 }
 
-gtsam::Values TrajectoryPrediction::constructGraph(const gpmp2::PointRobotModel &arm, const gtsam::Vector &start_conf, const gtsam::Vector &start_vel,
-                              const gtsam::Vector &end_conf, const gtsam::Vector &end_vel) {
-  gtsam::NonlinearFactorGraph graph_;
-   // TODO - Use actual data
-  gtsam::Point2 origin(0.0, 0.0);
-  // gtsam::Matrix data_ptr;
-  gtsam::Matrix data = Eigen::MatrixXd::Zero(num_rows_, num_rows_);
+void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const gtsam::Vector &start_vel, const gtsam::Vector &end_conf, const gtsam::Vector &end_vel) {
+  
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  graph_ = gtsam::NonlinearFactorGraph();
+
+  std::cout << "epsilon: " << setting_.epsilon << std::endl;
 
   if (!use_empty_distance_field_ && df_initialised_){
-    // origin = gtsam::Point2(0.0, 0.0);
-    data = Eigen::Map<gtsam::Matrix>(&distance_field_2d_[0], num_rows_, num_rows_) ; // Assume num_rows and num_cols are equal
-    origin = gtsam::Point2(num_rows_ * resolution_, num_rows_ * resolution_);
+    std::vector<double> vec_data(latest_msg_->data.begin(), latest_msg_->data.end());
+    gtsam::Point2 origin(-(num_rows_/2.0)*resolution_, -(num_rows_/2.0) * resolution_);
+    
+    
+    
+    std::cout << "--------------------------------------------" << std::endl;
+    std::cout << "Original" << std::endl;
+    data_ = Eigen::Map<gtsam::Matrix>(&vec_data[0], num_rows_, num_rows_) ; // Assume num_rows and num_cols are equal
+    data_.transposeInPlace();
+
+    sdf_ = gpmp2::PlanarSDF(origin, resolution_, data_);
   }
-  // else{
-  //   data = Eigen::Map<gtsam::Matrix>(&distance_field_2d_[0], num_rows_, num_rows_) ; // Assume num_rows and num_cols are equal
-  //   origin = gtsam::Point2(num_rows_ * resolution_, num_rows_ * resolution_);
-  // }
-
+  else{
+    data_ = Eigen::MatrixXd::Zero(num_rows_, num_rows_);
+    gtsam::Point2 origin(0.0, 0.0);
+    sdf_ = gpmp2::PlanarSDF(origin, resolution_, data_);
+    test_factor_ = new gpmp2::ObstaclePlanarSDFFactorPointRobot(gtsam::Symbol('x', 0), robot_, sdf_, setting_.cost_sigma, setting_.epsilon);
+  }
   
-  // gtsam::Matrix data = Eigen::MatrixXd::Zero(300, 300);
-
-  gpmp2::PlanarSDF sdf = gpmp2::PlanarSDF(origin, resolution_, data);
-  
-  gtsam::Values init_values;
-  
-  gtsam::Vector avg_vel =
-      (end_conf - start_conf) / setting_.total_step / delta_t_;
-
   for (size_t i = 0; i < setting_.total_step; i++) {
     gtsam::Key pose_key = gtsam::Symbol('x', i);
     gtsam::Key vel_key = gtsam::Symbol('v', i);
-
-    gtsam::Vector pose =
-        start_conf + (end_conf - start_conf) * i / (setting_.total_step - 1);
-
-    init_values.insert(gtsam::Symbol('x', i), pose);
-    init_values.insert(gtsam::Symbol('v', i), avg_vel);
 
     // start and end
     if (i == 0) {
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(
           pose_key, start_conf, setting_.conf_prior_model));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, start_vel,
-                                                    setting_.vel_prior_model));
+      graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, start_vel, setting_.vel_prior_model));
 
     } else if (i == setting_.total_step - 1) {
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(
           pose_key, end_conf, setting_.conf_prior_model));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, end_vel,
-                                                    setting_.vel_prior_model));
+      graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, end_vel, setting_.vel_prior_model));
     }
 
-    // non-interpolated cost factor
-    graph_.add(gpmp2::ObstaclePlanarSDFFactorPointRobot(
-        pose_key, arm, sdf, setting_.cost_sigma, setting_.epsilon));
 
     if (i > 0) {
       gtsam::Key last_pose_key = gtsam::Symbol('x', i - 1);
       gtsam::Key last_vel_key = gtsam::Symbol('v', i - 1);
-
+      
       // GP factor
       graph_.add(gpmp2::GaussianProcessPriorLinear(
           last_pose_key, last_vel_key, pose_key, vel_key, delta_t_,
           setting_.Qc_model));
+
+      // non-interpolated cost factor
+      graph_.add(gpmp2::ObstaclePlanarSDFFactorPointRobot(
+        pose_key, robot_, sdf_, setting_.cost_sigma, setting_.epsilon));
+
+      // interpolated cost factor
+      if (setting_.obs_check_inter > 0) {
+        for (size_t j = 1; j <= setting_.obs_check_inter; j++) {
+          const double tau = inter_dt_ * static_cast<double>(j);
+          graph_.add(gpmp2::ObstaclePlanarSDFFactorGPPointRobot(last_pose_key, last_vel_key, pose_key, vel_key, robot_, sdf_,
+              setting_.cost_sigma, setting_.epsilon, setting_.Qc_model, delta_t_, tau));
+        }
+      }
+
+
     }
   }
-
-  // optimize!
-  std::shared_ptr<gtsam::NonlinearOptimizer> opt_ptr;
-  std::shared_ptr<gtsam::NonlinearOptimizerParams> opt_params_ptr;
-
-  opt_params_ptr = std::shared_ptr<gtsam::NonlinearOptimizerParams>(
-      new GaussNewtonParams());
-
-  // common settings
-  opt_params_ptr->setMaxIterations(setting_.max_iter);
-  opt_params_ptr->setRelativeErrorTol(setting_.rel_thresh);
-
-  // optimizer
-  opt_ptr =
-      std::shared_ptr<gtsam::NonlinearOptimizer>(new GaussNewtonOptimizer(
-          graph_, init_values,
-          *(dynamic_cast<GaussNewtonParams *>(opt_params_ptr.get()))));
-  return optimize(opt_ptr, *opt_params_ptr, 0);
 }
 
 void TrajectoryPrediction::distanceFieldCallback( const std_msgs::Float32MultiArray::ConstPtr &msg) {
-  std::cout << "Updated distance field."<< std::endl;
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  latest_msg_ = msg;
   df_initialised_ = true;
-  distance_field_2d_ = std::vector<double>(msg->data.begin(), msg->data.end());
 }
 
 void TrajectoryPrediction::viconPersonPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg) {
@@ -172,6 +162,22 @@ void TrajectoryPrediction::cameraPersonPoseCallback(const geometry_msgs::PointSt
   std::array<double, 2> pose_current = {msg->point.x, msg->point.y};
 
   this->plan(pose_current);
+}
+
+gtsam::Values TrajectoryPrediction::getInitTraj(const gtsam::Vector &start_conf, const gtsam::Vector &end_conf) {
+
+  gtsam::Values init_values;
+  
+  gtsam::Vector avg_vel = (end_conf - start_conf) / setting_.total_step / delta_t_;
+
+  for (size_t i = 0; i < setting_.total_step; i++) {
+    gtsam::Vector pose = start_conf + (end_conf - start_conf) * i / (setting_.total_step - 1);
+
+    init_values.insert(gtsam::Symbol('x', i), pose);
+    init_values.insert(gtsam::Symbol('v', i), avg_vel);
+  }
+
+  return init_values;
 }
 
 void TrajectoryPrediction::plan(std::array<double, 2> pose_current) {
@@ -203,17 +209,17 @@ void TrajectoryPrediction::plan(std::array<double, 2> pose_current) {
     }
   }
 
-  gpmp2::PointRobotModel robot = gpmp2::RobotModel<gpmp2::PointRobot>();
-
   gtsam::Vector2 start_conf(pose_current[0], pose_current[1]);
   gtsam::Vector2 end_conf(goal_x, goal_y);
   gtsam::Vector2 start_vel(0.0, 0.0);
   gtsam::Vector2 end_vel(0.0, 0.0);
 
-  gtsam::Values result = constructGraph(robot, start_conf, start_vel, end_conf, end_vel);
-  result.print("Final Result:\n");
-
+  constructGraph(start_conf, start_vel, end_conf, end_vel);
   
+  // Init values
+  gtsam::Values init_values = getInitTraj(start_conf, end_conf);
+  gtsam::Values result = optimize(init_values);
+
   // Publish a msg of the predicted human trajectory
 
   geometry_msgs::PoseArray predicted_trajectory;
@@ -221,7 +227,7 @@ void TrajectoryPrediction::plan(std::array<double, 2> pose_current) {
   
   gtsam::Vector predicted_pose;
   geometry_msgs::Pose p;
-    for (int i = 0; i < setting_.total_step; i++) {
+  for (int i = 0; i < setting_.total_step; i++) {
     predicted_pose = result.at<gtsam::Vector>(gtsam::Symbol('x', i));
     p.position.x = predicted_pose[0];
     p.position.y = predicted_pose[1];
@@ -300,6 +306,11 @@ gtsam::Values TrajectoryPrediction::optimize(std::shared_ptr<gtsam::NonlinearOpt
     }
   }
 
+gtsam::Values TrajectoryPrediction::optimize(const gtsam::Values& init_values){
+
+  return gpmp2::optimize(graph_, init_values, setting_);
+};
+
 void TrajectoryPrediction::visualisePrediction(const gtsam::Values& plan, const size_t num_keys) const{
     nav_msgs::Path path;
     path.header.frame_id = global_frame_;
@@ -313,10 +324,6 @@ void TrajectoryPrediction::visualisePrediction(const gtsam::Values& plan, const 
       pose_msg.pose.position.x = pose[0];
       pose_msg.pose.position.y = pose[1]; 
       pose_msg.pose.position.z = 0;
-      // pose_msg.pose.orientation.x = q[0];
-      // pose_msg.pose.orientation.y = q[1];
-      // pose_msg.pose.orientation.z = q[2];
-      // pose_msg.pose.orientation.w = q[3];
 
       path.poses.push_back(pose_msg);
 
