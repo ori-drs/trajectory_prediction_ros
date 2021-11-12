@@ -99,7 +99,6 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const
     data_ = Eigen::MatrixXd::Zero(num_rows_, num_rows_);
     gtsam::Point2 origin(0.0, 0.0);
     sdf_ = gpmp2::PlanarSDF(origin, resolution_, data_);
-    test_factor_ = new gpmp2::ObstaclePlanarSDFFactorPointRobot(gtsam::Symbol('x', 0), robot_, sdf_, setting_.cost_sigma, setting_.epsilon);
   }
   
   for (size_t i = 0; i < setting_.total_step; i++) {
