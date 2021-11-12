@@ -80,16 +80,10 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const
   std::lock_guard<std::mutex> lock(data_mutex_);
   graph_ = gtsam::NonlinearFactorGraph();
 
-  std::cout << "epsilon: " << setting_.epsilon << std::endl;
-
   if (!use_empty_distance_field_ && df_initialised_){
     std::vector<double> vec_data(latest_msg_->data.begin(), latest_msg_->data.end());
     gtsam::Point2 origin(-(num_rows_/2.0)*resolution_, -(num_rows_/2.0) * resolution_);
     
-    
-    
-    std::cout << "--------------------------------------------" << std::endl;
-    std::cout << "Original" << std::endl;
     data_ = Eigen::Map<gtsam::Matrix>(&vec_data[0], num_rows_, num_rows_) ; // Assume num_rows and num_cols are equal
     data_.transposeInPlace();
 
