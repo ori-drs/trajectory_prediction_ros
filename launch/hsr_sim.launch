@@ -5,7 +5,7 @@
 <param name="predicted_traj_topic" type="string" value="/traj_predictions" />
 <param name="distance_field_topic" type="string" value="/distance_field_2d" />
 <param name="resolution" type="double" value="0.05" />
-<param name="num_rows" type="int" value="256" />
+<param name="num_rows" type="int" value="320" />
 <param name="use_empty_distance_field" type="bool" value="false" />
 <param name="use_rgbd" type="bool" value="true" />
 
@@ -14,6 +14,6 @@
 <!-- Global frame of the robot. In rosbags this is the vicon world frame -->
 <param name="global_frame" type="string" value="/odom" />
 
-<node name="trajectory_prediction" pkg="trajectory_prediction" type="trajectory_prediction_node"/>
+<node name="trajectory_prediction" pkg="trajectory_prediction" type="trajectory_prediction_node" output="screen"/>
 
 </launch>

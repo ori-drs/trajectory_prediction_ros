@@ -18,6 +18,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
   node_.param<double>("resolution", resolution_, 0.05);
   node_.param<int>("num_rows", num_rows_, 256);
   node_.param<bool>("use_empty_distance_field", use_empty_distance_field_, true);
+  node_.param<double>("obstacle_delta_t", delta_t_, 0.5);
 
   df_initialised_ = false;
 
@@ -47,7 +48,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
                                         this);
 
   desired_goal_pub_ = node_.advertise<geometry_msgs::PointStamped>(goal_topic_, 100);
-  predicted_traj_pub = node_.advertise<geometry_msgs::PoseArray>(predicted_traj_topic_, 100);
+  predicted_traj_pub_ = node_.advertise<geometry_msgs::PoseArray>(predicted_traj_topic_, 100);
   path_vis_pub_ = node_.advertise<nav_msgs::Path>(path_vis_topic_, 1000);
 
   createSettings();
@@ -55,12 +56,45 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
 
 }
 
+void TrajectoryPrediction::distanceFieldCallback( const std_msgs::Float32MultiArray::ConstPtr &msg) {
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  latest_msg_ = msg;
+  df_initialised_ = true;
+}
+
+void TrajectoryPrediction::viconPersonPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg) {
+  std::array<double, 2> pose_current = {msg->transform.translation.x, msg->transform.translation.y};
+  person_detected_ = true;
+
+  latest_person_pose_ = {msg->transform.translation.x, msg->transform.translation.y};
+  latest_person_msg_time_ = msg->header.stamp;
+
+  detection_positions_.push_back({msg->transform.translation.x, msg->transform.translation.y});
+  detection_times_.push_back(msg->header.stamp);            
+  // this->plan(pose_current);
+}
+
+void TrajectoryPrediction::cameraPersonPoseCallback(const geometry_msgs::PointStamped::ConstPtr &msg) {
+
+  person_detected_ = true;
+
+  latest_person_pose_ = {msg->point.x, msg->point.y};
+  latest_person_msg_time_ = msg->header.stamp;
+
+  detection_positions_.push_back({msg->point.x, msg->point.y});
+  detection_times_.push_back(msg->header.stamp);
+  // this->plan();
+}
+
 void TrajectoryPrediction::createSettings(float total_time, int total_time_step){
+  
+  int total_step = 20;
+
   gtsam::Matrix2 Qc = 0.1 * gtsam::Matrix::Identity(2, 2);
   setting_ = gpmp2::TrajOptimizerSetting(2);
   setting_.setLM();
-  setting_.set_total_step(20);
-  setting_.set_total_time(10);
+  setting_.set_total_step(total_step);
+  setting_.set_total_time(total_step*delta_t_);
   setting_.set_epsilon(0.3);
   setting_.set_cost_sigma(0.2);
   setting_.set_obs_check_inter(3);
@@ -71,11 +105,22 @@ void TrajectoryPrediction::createSettings(float total_time, int total_time_step)
   setting_.setVerbosityNone();
   setting_.set_rel_thresh(1e-2);
 
-  delta_t_ = setting_.total_time / static_cast<double>(setting_.total_step);
   inter_dt_ = delta_t_ / static_cast<double>(setting_.obs_check_inter + 1);
 }
 
-void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const gtsam::Vector &start_vel, const gtsam::Vector &end_conf, const gtsam::Vector &end_vel) {
+void TrajectoryPrediction::reestimateTrajectoryParams(const float obstacle_speed, const std::array<double, 2> obstacle_goal, const float dist_to_goal) {
+
+  // float dist = std::sqrt(std::pow(obstacle_goal[0] - latest_person_pose_[0], 2) +
+  //                          std::pow(obstacle_goal[1] - latest_person_pose_[1], 2)); 
+
+  float est_time = dist_to_goal/obstacle_speed;
+  float num_steps = ceil(est_time/delta_t_);
+
+  setting_.set_total_step(num_steps);
+  setting_.set_total_time(num_steps * delta_t_);
+}
+
+void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const gtsam::Vector &start_vel, const gtsam::Vector &end_conf, const gtsam::Vector &end_vel, const bool add_goal_factors) {
   
   std::lock_guard<std::mutex> lock(data_mutex_);
   graph_ = gtsam::NonlinearFactorGraph();
@@ -105,7 +150,8 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const
           pose_key, start_conf, setting_.conf_prior_model));
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, start_vel, setting_.vel_prior_model));
 
-    } else if (i == setting_.total_step - 1) {
+    } 
+    else if ((i == setting_.total_step - 1) && add_goal_factors) {
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(
           pose_key, end_conf, setting_.conf_prior_model));
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, end_vel, setting_.vel_prior_model));
@@ -139,29 +185,27 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf, const
   }
 }
 
-void TrajectoryPrediction::distanceFieldCallback( const std_msgs::Float32MultiArray::ConstPtr &msg) {
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  latest_msg_ = msg;
-  df_initialised_ = true;
-}
+void TrajectoryPrediction::pruneDetectionHistory() {
+  ros::Time t_now = ros::Time::now();
 
-void TrajectoryPrediction::viconPersonPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg) {
-  std::array<double, 2> pose_current = {msg->transform.translation.x, msg->transform.translation.y};
-                                        
-  this->plan(pose_current);
-}
+  for (size_t i = detection_times_.size() - 1; i > 0 ;  i--)
+  {
+    float diff = (t_now - detection_times_[i]).toSec();
 
-void TrajectoryPrediction::cameraPersonPoseCallback(const geometry_msgs::PointStamped::ConstPtr &msg) {
-  std::array<double, 2> pose_current = {msg->point.x, msg->point.y};
-
-  this->plan(pose_current);
+    if (diff > thresh_observed_t_secs_)
+    {
+      detection_times_.erase(detection_times_.begin(),detection_times_.begin()+i);
+      detection_positions_.erase(detection_positions_.begin(),detection_positions_.begin()+i);
+      break;
+    }
+  }
 }
 
 gtsam::Values TrajectoryPrediction::getInitTraj(const gtsam::Vector &start_conf, const gtsam::Vector &end_conf) {
 
   gtsam::Values init_values;
   
-  gtsam::Vector avg_vel = (end_conf - start_conf) / setting_.total_step / delta_t_;
+  gtsam::Vector avg_vel = ((end_conf - start_conf) / setting_.total_step) / delta_t_;
 
   for (size_t i = 0; i < setting_.total_step; i++) {
     gtsam::Vector pose = start_conf + (end_conf - start_conf) * i / (setting_.total_step - 1);
@@ -173,68 +217,154 @@ gtsam::Values TrajectoryPrediction::getInitTraj(const gtsam::Vector &start_conf,
   return init_values;
 }
 
-void TrajectoryPrediction::plan(std::array<double, 2> pose_current) {
-                                        
-  double goal_x, goal_y;
+std::array<double, 2> TrajectoryPrediction::getIntendedGoal(float &dist_to_goal) {
 
-  double human_ori = std::atan2(pose_current[1] - pose_past_[1],
-                                pose_current[0] - pose_past_[0]);
-  pose_past_ = pose_current;
+  std::array<double, 2> goal;
 
+  // Get the current orientation
+  double human_ori = std::atan2(latest_person_pose_[1] - pose_past_[1],
+                                latest_person_pose_[0] - pose_past_[0]);
+  pose_past_ = latest_person_pose_;
+
+  // Identify the likely intended goal 
   double min_theta = 3.15;
+  double goal_dist, goal_theta;
   for (int i = 0; i < possible_goals_.size(); ++i) {
     
-    double goal_dist = std::sqrt(std::pow(possible_goals_[i][0] - pose_current[0], 2) +
-                                 std::pow(possible_goals_[i][1] - pose_current[1], 2));
+    goal_dist = std::sqrt(std::pow(possible_goals_[i][0] - latest_person_pose_[0], 2) +
+                                 std::pow(possible_goals_[i][1] - latest_person_pose_[1], 2));
 
-    double goal_theta = std::atan2(possible_goals_[i][1] - pose_current[1],
-                                    possible_goals_[i][0] - pose_current[0]);
+    goal_theta = std::atan2(possible_goals_[i][1] - latest_person_pose_[1],
+                                    possible_goals_[i][0] - latest_person_pose_[0]);
 
     // ROS_INFO("goal_dist: [%f]", goal_dist);
     if (goal_dist < min_distance_) {
-      goal_x = possible_goals_[i][0];
-      goal_y = possible_goals_[i][1];
+      goal = possible_goals_[i];
+      dist_to_goal = goal_dist;
       break;
     } else if (std::abs(goal_theta - human_ori) < min_theta) {
-      goal_x = possible_goals_[i][0];
-      goal_y = possible_goals_[i][1];
+      goal = possible_goals_[i];
       min_theta = std::abs(goal_theta - human_ori);
+      dist_to_goal = goal_dist;
     }
   }
+  return goal;
+}
 
-  gtsam::Vector2 start_conf(pose_current[0], pose_current[1]);
-  gtsam::Vector2 end_conf(goal_x, goal_y);
+float TrajectoryPrediction::getObstacleSpeed() {
+
+  float obstacle_speed;
+
+  // Determine the obstacle/human speed using either recent history or a default value
+  float history_time_diff = (detection_times_.back() - detection_times_.front()).toSec();
+  // ROS_INFO("History length (s): %0.2f", history_time_diff);
+
+  bool isHistoryReliable = history_time_diff > min_required_history_t_;
+  if (isHistoryReliable)
+  {
+    std::array<double, 2> pos_1 = detection_positions_.front();
+    std::array<double, 2> pos_2 = detection_positions_.back();
+
+    float dist = std::sqrt(std::pow(pos_1[0] - pos_2[0], 2) +
+                           std::pow(pos_1[1] - pos_2[1], 2)); 
+
+    obstacle_speed = dist/history_time_diff;
+    // ROS_INFO("History reliable. Speed is %0.2f", obstacle_speed);
+  }
+  else{
+    // obstacle_speed = default_human_speed_;
+    obstacle_speed = 0.0;
+    // ROS_INFO("History not reliable. Speed is %0.2f", obstacle_speed);
+  }
+
+  return obstacle_speed;
+}
+
+bool TrajectoryPrediction::isLatestDetectionRecent() {
+  // Get current time and compare with the last time a person was observed
+  ros::Duration diff = ros::Time::now() - latest_person_msg_time_;
+  
+  // If the person wasn't recently observed, publish a message with no predicted poses 
+  if (diff.toSec() > thresh_observed_t_secs_)
+  {
+    return false;;
+  }
+  else{
+    return true;
+  }
+}
+
+void TrajectoryPrediction::plan() {
+
+  // If people have not been detected or recently observed
+  if (!person_detected_)
+  {
+    publishEmptyPrediction();
+    // ROS_INFO("No person has been detected yet.");
+    return;
+  }
+  else if(!isLatestDetectionRecent()){
+    // All history is too old so clear it
+    detection_times_.clear();
+    detection_positions_.clear();
+    // ROS_INFO("No recent observation of a person.");
+    publishEmptyPrediction();
+    return;
+  }
+
+  // Since we have a recent observation, ensure we only have 'recent' observations of the person that we can use
+  pruneDetectionHistory();
+
+  // With a pruned history, get the human's speed. If history
+  // is long enough, this will be an avg, otherwise a default value
+  float obstacle_speed = getObstacleSpeed();
+    
+  // Now we perform intention recognition and determine the goal
+  float dist_to_goal = 0 ;
+  std::array<double, 2> obstacle_goal = getIntendedGoal(dist_to_goal);
+  bool add_goal_factors = true; // TODO - determine this based on how certain we are about the goal
+
+
+  ROS_INFO("Obstacle speed: %0.2f", obstacle_speed);
+  // ROS_INFO("Obstacle speed: %0.2f \t Goal: (%0.2f,%0.2f)", obstacle_speed, obstacle_goal[0], obstacle_goal[1]);
+  // ROS_INFO("Goal: (%0.2f,%0.2f)", obstacle_speed, obstacle_goal[0], obstacle_goal[1]);
+
+  // If the speed is very low, assume the person is stationary
+  // If person is very close to a goal, assume stationary
+  bool speed_stationary_bool = (obstacle_speed < stationary_thresh_speed_);
+  bool close_to_goal = (dist_to_goal < stationary_thresh_dist_);
+  
+  if ( speed_stationary_bool || close_to_goal )
+  {
+
+    // ROS_INFO("Stationary person detected. Stationary speed: %d \t Close to goal %d", (int) speed_stationary_bool, (int) close_to_goal);
+    publishStationaryTrajectory();
+    publishDesiredGoal(latest_person_pose_);
+    visualiseStationaryPath();
+    return;
+  }
+
+  // With the speed of the obstacle/human and the intended goal
+  // we can now estimate the factor graph params
+  reestimateTrajectoryParams(obstacle_speed, obstacle_goal, dist_to_goal);
+  
+  gtsam::Vector2 start_conf(latest_person_pose_[0], latest_person_pose_[1]);
+  gtsam::Vector2 end_conf(obstacle_goal[0], obstacle_goal[1]);
   gtsam::Vector2 start_vel(0.0, 0.0);
   gtsam::Vector2 end_vel(0.0, 0.0);
 
-  constructGraph(start_conf, start_vel, end_conf, end_vel);
+  constructGraph(start_conf, start_vel, end_conf, end_vel, add_goal_factors);
   
   // Init values
   gtsam::Values init_values = getInitTraj(start_conf, end_conf);
   gtsam::Values result = optimize(init_values);
 
   // Publish a msg of the predicted human trajectory
+  // ROS_INFO("Moving person detecting. Publishing prediction.");
 
-  geometry_msgs::PoseArray predicted_trajectory;
-  predicted_trajectory.header.frame_id = global_frame_;
-  
-  gtsam::Vector predicted_pose;
-  geometry_msgs::Pose p;
-  for (int i = 0; i < setting_.total_step; i++) {
-    predicted_pose = result.at<gtsam::Vector>(gtsam::Symbol('x', i));
-    p.position.x = predicted_pose[0];
-    p.position.y = predicted_pose[1];
-    predicted_trajectory.poses.push_back(p);
-  }
+  publishPredictedTrajectory(result);
 
-  predicted_traj_pub.publish(predicted_trajectory);
-
-  // Publish a msg indicating estimated goal of the person
-  geometry_msgs::PointStamped desired_goal_msg;
-  desired_goal_msg.header.frame_id = global_frame_;
-  desired_goal_msg.point.x = goal_x;
-  desired_goal_msg.point.y = goal_y;
-  desired_goal_pub_.publish(desired_goal_msg);
+  publishDesiredGoal(obstacle_goal);
 
   visualisePrediction(result, setting_.total_step);
 }
@@ -324,3 +454,65 @@ void TrajectoryPrediction::visualisePrediction(const gtsam::Values& plan, const 
     
     path_vis_pub_.publish(path);
 };
+
+void TrajectoryPrediction::visualiseStationaryPath() const{
+    nav_msgs::Path path;
+    path.header.frame_id = global_frame_;
+    path.header.stamp = latest_person_msg_time_;
+
+    geometry_msgs::PoseStamped pose_msg;
+    pose_msg.header.frame_id = global_frame_;
+    pose_msg.pose.position.x = latest_person_pose_[0];
+    pose_msg.pose.position.y = latest_person_pose_[1]; 
+    pose_msg.pose.position.z = 0;
+    path.poses.push_back(pose_msg);
+
+    path_vis_pub_.publish(path);
+};
+
+void TrajectoryPrediction::publishDesiredGoal(const std::array<double, 2> obstacle_goal) const{
+  // Publish a msg indicating estimated goal of the person
+  geometry_msgs::PointStamped desired_goal_msg;
+  desired_goal_msg.header.frame_id = global_frame_;
+  desired_goal_msg.point.x = obstacle_goal[0];
+  desired_goal_msg.point.y = obstacle_goal[1];
+  desired_goal_pub_.publish(desired_goal_msg);
+}
+
+void TrajectoryPrediction::publishEmptyPrediction() const {
+    geometry_msgs::PoseArray predicted_trajectory;
+    predicted_trajectory.header.frame_id = global_frame_;
+    predicted_trajectory.header.stamp = ros::Time::now();
+    predicted_traj_pub_.publish(predicted_trajectory);
+}
+
+void TrajectoryPrediction::publishStationaryTrajectory() const{
+  geometry_msgs::PoseArray predicted_trajectory;
+  predicted_trajectory.header.frame_id = global_frame_;
+  predicted_trajectory.header.stamp = latest_person_msg_time_;
+  
+  geometry_msgs::Pose p;
+  p.position.x = latest_person_pose_[0];
+  p.position.y = latest_person_pose_[1];
+  predicted_trajectory.poses.push_back(p);
+
+  predicted_traj_pub_.publish(predicted_trajectory);
+}
+
+void TrajectoryPrediction::publishPredictedTrajectory(const gtsam::Values &result) const{
+  geometry_msgs::PoseArray predicted_trajectory;
+  predicted_trajectory.header.frame_id = global_frame_;
+  predicted_trajectory.header.stamp = latest_person_msg_time_;
+  
+  gtsam::Vector predicted_pose;
+  geometry_msgs::Pose p;
+  for (int i = 0; i < setting_.total_step; i++) {
+    predicted_pose = result.at<gtsam::Vector>(gtsam::Symbol('x', i));
+    p.position.x = predicted_pose[0];
+    p.position.y = predicted_pose[1];
+    predicted_trajectory.poses.push_back(p);
+  }
+
+  predicted_traj_pub_.publish(predicted_trajectory);
+}
+

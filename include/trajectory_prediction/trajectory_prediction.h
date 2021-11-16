@@ -50,10 +50,16 @@ class TrajectoryPrediction {
         void distanceFieldCallback( const std_msgs::Float32MultiArray::ConstPtr &msg);
         void viconPersonPoseCallback(const geometry_msgs::TransformStamped::ConstPtr &msg);
         void cameraPersonPoseCallback(const geometry_msgs::PointStamped::ConstPtr &msg);
+        void pruneDetectionHistory();
+        bool isLatestDetectionRecent();
 
+        std::array<double, 2> getIntendedGoal(float &dist_to_goal);
+        float getObstacleSpeed();
+
+        void reestimateTrajectoryParams(const float obstacle_speed, const std::array<double, 2> obstacle_goal, const float dist_to_goal);
         void createSettings(float total_time = 10, int total_time_step = 10);
-        void constructGraph(const gtsam::Vector &start_conf, const gtsam::Vector &start_vel, const gtsam::Vector &end_conf, const gtsam::Vector &end_vel);
-        void plan(std::array<double, 2> pose_current);
+        void constructGraph(const gtsam::Vector &start_conf, const gtsam::Vector &start_vel, const gtsam::Vector &end_conf, const gtsam::Vector &end_vel, const bool add_goal_factors);
+        void plan();
 
         gtsam::Values getInitTraj(const gtsam::Vector &start_conf, const gtsam::Vector &end_conf);
         gtsam::Values optimize(const gtsam::Values& init_values);
@@ -63,6 +69,12 @@ class TrajectoryPrediction {
 
 
         void visualisePrediction(const gtsam::Values& plan, const size_t num_keys) const;
+        void visualiseStationaryPath() const;
+        void publishDesiredGoal(const std::array<double, 2> obstacle_goal) const;
+
+        void publishEmptyPrediction() const;
+        void publishPredictedTrajectory(const gtsam::Values &result) const;
+        void publishStationaryTrajectory() const;
 
     private:
         
@@ -70,9 +82,10 @@ class TrajectoryPrediction {
         ros::NodeHandle node_;
         std::string goal_topic_, predicted_traj_topic_, global_frame_, path_vis_topic_, distance_field_topic_, person_position_topic_;
         ros::Subscriber sub_, distance_field_sub_;
-        ros::Publisher desired_goal_pub_, predicted_traj_pub, path_vis_pub_;
+        ros::Publisher desired_goal_pub_, predicted_traj_pub_, path_vis_pub_;
         std_msgs::Float32MultiArray::ConstPtr latest_msg_;
-
+        ros::Time latest_person_msg_time_;
+        bool person_detected_ = false;
 
         // std::array<std::array<double, 2>, 4> possible_goals_{
         //                                                     {{{0, 4}}, 
@@ -81,7 +94,23 @@ class TrajectoryPrediction {
         //                                                     {{-1.82, 0.62}}}};
 
         // Intention
-        std::array<std::array<double, 2>, 1> possible_goals_{{{{3, -2}}}};
+        // std::array<std::array<double, 2>, 1> possible_goals_{{{{3, -2}}}};
+        std::array<double, 2> latest_person_pose_;
+        float thresh_observed_t_secs_ = 5.0; // seconds
+        float min_required_history_t_ = 1.0; // seconds
+        float default_human_speed_ = 4.0; // m/s
+        float stationary_thresh_speed_ = 0.1; // m/s
+        float stationary_thresh_dist_ = 0.5; // m/s
+
+        std::vector<ros::Time> detection_times_;
+        std::vector<std::array<double, 2>>detection_positions_;
+
+        std::array<std::array<double, 2>, 2> possible_goals_{
+                                                                {
+                                                                    {{5, -2}},
+                                                                    {{-1.0, 0}}
+                                                                    }
+                                                            };
 
         std::array<double, 2> pose_past_ = {0, 0};
 
