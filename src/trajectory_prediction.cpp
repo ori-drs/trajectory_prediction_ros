@@ -1,5 +1,13 @@
 #include <trajectory_prediction/trajectory_prediction.h>
 
+// Constrain angles between -pi and pi
+float constrainAngle(float x){
+    x = fmod(x + M_PI, 2*M_PI);
+    if (x < 0)
+        x += 2*M_PI;
+    return x - M_PI;
+}
+
 TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
 
   node_ = node;
@@ -29,7 +37,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
  if (use_rgbd_)
  {
   sub_ = node_.subscribe(person_position_topic_, 
-                                        100,
+                                        1,
                                         &TrajectoryPrediction::cameraPersonPoseCallback, 
                                         this);
  }
@@ -43,7 +51,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node){
 
 
   distance_field_sub_ = node_.subscribe(distance_field_topic_, 
-                                        100,
+                                        1,
                                         &TrajectoryPrediction::distanceFieldCallback, 
                                         this);
 
@@ -221,33 +229,56 @@ std::array<double, 2> TrajectoryPrediction::getIntendedGoal(float &dist_to_goal)
 
   std::array<double, 2> goal;
 
+  // std::cout << "------------------------------" << std::endl;
+  // std::cout << "-------Current history--------"<< std::endl;
+  // for (size_t i = 0; i < detection_times_.size() ;  i++)
+  // {
+  //     std::cout << "(" << detection_positions_[i][0] << ", " << detection_positions_[i][1] << ")" << std::endl;
+  // }
+  // std::cout << "------------------------------" << std::endl;
+  // std::cout << std::endl;
+  // std::cout << std::endl;
+
   // Get the current orientation
-  double human_ori = std::atan2(latest_person_pose_[1] - pose_past_[1],
-                                latest_person_pose_[0] - pose_past_[0]);
-  pose_past_ = latest_person_pose_;
+  pose_past_ = detection_positions_.front();
+
+  double human_ori = constrainAngle(std::atan2(latest_person_pose_[1] - pose_past_[1],
+                                latest_person_pose_[0] - pose_past_[0]));
+
+  // std::cout << "Past position: (" << pose_past_[0] << ", " << pose_past_[1] << ")" << std::endl;
+  // std::cout << "Current position: (" << latest_person_pose_[0] << ", " << latest_person_pose_[1] << ")" << std::endl;
+
+  // pose_past_ = latest_person_pose_;
 
   // Identify the likely intended goal 
   double min_theta = 3.15;
   double goal_dist, goal_theta;
+
   for (int i = 0; i < possible_goals_.size(); ++i) {
     
     goal_dist = std::sqrt(std::pow(possible_goals_[i][0] - latest_person_pose_[0], 2) +
                                  std::pow(possible_goals_[i][1] - latest_person_pose_[1], 2));
 
-    goal_theta = std::atan2(possible_goals_[i][1] - latest_person_pose_[1],
-                                    possible_goals_[i][0] - latest_person_pose_[0]);
+    goal_theta = constrainAngle(std::atan2(possible_goals_[i][1] - latest_person_pose_[1],
+                                    possible_goals_[i][0] - latest_person_pose_[0]));
 
     // ROS_INFO("goal_dist: [%f]", goal_dist);
     if (goal_dist < min_distance_) {
       goal = possible_goals_[i];
       dist_to_goal = goal_dist;
       break;
-    } else if (std::abs(goal_theta - human_ori) < min_theta) {
+    } else if (std::abs(constrainAngle(goal_theta - human_ori)) < min_theta) {
       goal = possible_goals_[i];
-      min_theta = std::abs(goal_theta - human_ori);
+      min_theta = std::abs(constrainAngle(goal_theta - human_ori));
       dist_to_goal = goal_dist;
     }
+    // std::cout << "Indx: " << i 
+    //           << "\t goal_theta: " << goal_theta
+    //           << "\t human_ori: " << human_ori
+    //           << "\t d_theta: " << std::abs(constrainAngle(goal_theta - human_ori)) << "\t Goal: (" << possible_goals_[i][0] << ", " << possible_goals_[i][1] << ")" << std::endl; 
   }
+  // std::cout << "Actual goal chosen Goal: (" << goal[0] << ", " << goal[1] << ")" << std::endl;
+
   return goal;
 }
 
