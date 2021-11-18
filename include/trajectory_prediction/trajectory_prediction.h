@@ -39,6 +39,9 @@
 
 #include <mutex>
 
+// Constrain angles between -pi and pi
+float constrainAngle(float x);
+
 class TrajectoryPrediction {
     public:
 
@@ -108,7 +111,7 @@ class TrajectoryPrediction {
         std::array<std::array<double, 2>, 2> possible_goals_{
                                                                 {
                                                                     {{5, -2}},
-                                                                    {{-1.0, 0}}
+                                                                    {{1.0, 0}}
                                                                     }
                                                             };
 
