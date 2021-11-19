@@ -15,11 +15,13 @@
 #include "std_msgs/Float32MultiArray.h"
 #include "std_msgs/String.h"
 #include "tf/transform_listener.h"
+#include <control_msgs/JointTrajectoryControllerState.h>
 
 #include <gpmp2/kinematics/PointRobot.h>
 #include <gpmp2/kinematics/PointRobotModel.h>
-#include <gpmp2/multirobot/TwoAgentFactorPointRobot.h>
-#include <gpmp2/multirobot/TwoAgentFactorGPPointRobot.h>
+
+#include <gpmp2/obstacle/TwoAgentFactorPointRobot.h>
+#include <gpmp2/obstacle/TwoAgentFactorGPPointRobot.h>
 #include <gpmp2/obstacle/ObstaclePlanarSDFFactorGPPointRobot.h>
 #include <gpmp2/obstacle/ObstaclePlanarSDFFactorPointRobot.h>
 #include <gpmp2/obstacle/PlanarSDF.h>
@@ -56,6 +58,9 @@ class TrajectoryPrediction {
       const geometry_msgs::TransformStamped::ConstPtr &msg);
   void cameraPersonPoseCallback(
       const geometry_msgs::PointStamped::ConstPtr &msg);
+  void robotPositionCallback(
+      const control_msgs::JointTrajectoryControllerState::ConstPtr& msg);
+
   void pruneDetectionHistory();
   bool isLatestDetectionRecent();
 
@@ -97,8 +102,8 @@ class TrajectoryPrediction {
   // ROS
   ros::NodeHandle node_;
   std::string goal_topic_, predicted_traj_topic_, global_frame_,
-      path_vis_topic_, distance_field_topic_, person_position_topic_;
-  ros::Subscriber sub_, distance_field_sub_;
+      path_vis_topic_, distance_field_topic_, person_position_topic_, robot_pos_topic_;
+  ros::Subscriber sub_, distance_field_sub_, robot_pos_sub_;
   ros::Publisher desired_goal_pub_, predicted_traj_pub_, path_vis_pub_;
   std_msgs::Float32MultiArray::ConstPtr latest_msg_;
   ros::Time latest_person_msg_time_;
@@ -113,8 +118,8 @@ class TrajectoryPrediction {
   // Intention
   // std::array<std::array<double, 2>, 1> possible_goals_{{{{3, -2}}}};
   std::array<double, 2> latest_person_pose_;
-  float thresh_observed_t_secs_ = 5.0;   // seconds
-  float min_required_history_t_ = 1.0;   // seconds
+  float thresh_observed_t_secs_ = 2.0;   // seconds
+  float min_required_history_t_ = 0.5;   // seconds
   float default_human_speed_ = 4.0;      // m/s
   float stationary_thresh_speed_ = 0.1;  // m/s
   float stationary_thresh_dist_ = 0.5;   // m/s
@@ -122,7 +127,7 @@ class TrajectoryPrediction {
   std::vector<ros::Time> detection_times_;
   std::vector<std::array<double, 2>> detection_positions_;
 
-  std::array<std::array<double, 2>, 2> possible_goals_{{{{5, -2}}, {{1.0, 0}}}};
+  std::array<std::array<double, 2>, 2> possible_goals_{{{{5, -2}}, {{-1.0, 0}}}};
 
   std::array<double, 2> pose_past_ = {0, 0};
 
@@ -136,6 +141,9 @@ class TrajectoryPrediction {
   gtsam::Matrix data_;
   gtsam::NonlinearFactorGraph graph_;
   gpmp2::TrajOptimizerSetting setting_;
+ 
+  gtsam::Vector3 robot_odom_state_;
+
 
   // Graph params
   double resolution_;

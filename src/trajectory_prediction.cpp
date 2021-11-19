@@ -22,6 +22,10 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node) {
                            "/distance_field_2d");
   node_.param<std::string>("person_position_topic", person_position_topic_,
                            "/vicon/person_1/person_1");
+
+  node_.param<std::string>("robot_odom_topic", robot_pos_topic_,
+                           "/hsrb/omni_base_controller/state");
+                           
   node_.param<bool>("use_rgbd", use_rgbd_, true);
 
   node_.param<double>("resolution", resolution_, 0.05);
@@ -51,11 +55,18 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node) {
       node_.subscribe(distance_field_topic_, 1,
                       &TrajectoryPrediction::distanceFieldCallback, this);
 
+  robot_pos_sub_ =
+      node_.subscribe(robot_pos_topic_, 1,
+                      &TrajectoryPrediction::robotPositionCallback, this);
+
   desired_goal_pub_ =
       node_.advertise<geometry_msgs::PointStamped>(goal_topic_, 100);
   predicted_traj_pub_ =
       node_.advertise<geometry_msgs::PoseArray>(predicted_traj_topic_, 100);
   path_vis_pub_ = node_.advertise<nav_msgs::Path>(path_vis_topic_, 1000);
+
+  robot_odom_state_ = gtsam::Vector3(0.0, 0.0, 0.0);
+
 
   createSettings();
   ROS_INFO("Trajectory prediction node initialised.");
@@ -66,6 +77,13 @@ void TrajectoryPrediction::distanceFieldCallback(
   std::lock_guard<std::mutex> lock(data_mutex_);
   latest_msg_ = msg;
   df_initialised_ = true;
+}
+
+void TrajectoryPrediction::robotPositionCallback(
+    const control_msgs::JointTrajectoryControllerState::ConstPtr& msg) {
+    robot_odom_state_[0] = msg->actual.positions[0];
+    robot_odom_state_[1] = msg->actual.positions[1];
+    robot_odom_state_[2] = msg->actual.positions[2];
 }
 
 void TrajectoryPrediction::viconPersonPoseCallback(
@@ -435,7 +453,7 @@ void TrajectoryPrediction::plan() {
   gtsam::Vector2 end_conf(obstacle_goal[0], obstacle_goal[1]);
   gtsam::Vector2 start_vel(0.0, 0.0);
   gtsam::Vector2 end_vel(0.0, 0.0);
-  gtsam::Vector2 pos_hsr(0.0, 0.0); // get this from vicon reading of HSR's position
+  gtsam::Vector2 pos_hsr(robot_odom_state_[0], robot_odom_state_[1]); // get this from vicon reading of HSR's position
   gtsam::Vector2 vel_hsr(0.0, 0.0);
 
   constructGraph(start_conf, start_vel, end_conf, end_vel, pos_hsr, vel_hsr, add_goal_factors);

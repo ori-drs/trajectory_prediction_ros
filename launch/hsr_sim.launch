@@ -9,7 +9,9 @@
 <param name="use_empty_distance_field" type="bool" value="false" />
 <param name="use_rgbd" type="bool" value="true" />
 
+                           
 <param name="person_position_topic" type="string" value="/rgbd_person_position" />
+<param name="robot_odom_topic" type="string" value="/hsrb/omni_base_controller/state" />
 
 <!-- Global frame of the robot. In rosbags this is the vicon world frame -->
 <param name="global_frame" type="string" value="/odom" />
