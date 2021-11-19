@@ -138,6 +138,7 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
                                           const gtsam::Vector &end_conf,
                                           const gtsam::Vector &end_vel,
                                           const gtsam::Vector &pos_hsr,
+                                          const gtsam::Vector &vel_hsr,
                                           const bool add_goal_factors) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   graph_ = gtsam::NonlinearFactorGraph();
@@ -434,11 +435,13 @@ void TrajectoryPrediction::plan() {
   gtsam::Vector2 end_conf(obstacle_goal[0], obstacle_goal[1]);
   gtsam::Vector2 start_vel(0.0, 0.0);
   gtsam::Vector2 end_vel(0.0, 0.0);
+  gtsam::Vector2 pos_hsr(0.0, 0.0); // get this from vicon reading of HSR's position
+  gtsam::Vector2 vel_hsr(0.0, 0.0);
 
-  constructGraph(start_conf, start_vel, end_conf, end_vel, add_goal_factors);
+  constructGraph(start_conf, start_vel, end_conf, end_vel, pos_hsr, vel_hsr, add_goal_factors);
 
   // Init values
-  gtsam::Values init_values = getInitTraj(start_conf, end_conf);
+  gtsam::Values init_values = getInitTraj(start_conf, end_conf, pos_hsr, vel_hsr);
   gtsam::Values result = optimize(init_values);
 
   // Publish a msg of the predicted human trajectory

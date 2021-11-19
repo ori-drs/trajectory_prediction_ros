@@ -18,6 +18,8 @@
 
 #include <gpmp2/kinematics/PointRobot.h>
 #include <gpmp2/kinematics/PointRobotModel.h>
+#include <gpmp2/multirobot/TwoAgentFactorPointRobot.h>
+#include <gpmp2/multirobot/TwoAgentFactorGPPointRobot.h>
 #include <gpmp2/obstacle/ObstaclePlanarSDFFactorGPPointRobot.h>
 #include <gpmp2/obstacle/ObstaclePlanarSDFFactorPointRobot.h>
 #include <gpmp2/obstacle/PlanarSDF.h>
@@ -68,11 +70,15 @@ class TrajectoryPrediction {
                       const gtsam::Vector &start_vel,
                       const gtsam::Vector &end_conf,
                       const gtsam::Vector &end_vel,
+                      const gtsam::Vector &pos_hsr,
+                      const gtsam::Vector &vel_hsr,
                       const bool add_goal_factors);
   void plan();
 
   gtsam::Values getInitTraj(const gtsam::Vector &start_conf,
-                            const gtsam::Vector &end_conf);
+                            const gtsam::Vector &end_conf,
+                            const gtsam::Vector &pos_hsr,
+                            const gtsam::Vector &vel_hsr);
   gtsam::Values optimize(const gtsam::Values &init_values);
   gtsam::Values optimize(std::shared_ptr<gtsam::NonlinearOptimizer> opt,
                          const gtsam::NonlinearOptimizerParams &params,
