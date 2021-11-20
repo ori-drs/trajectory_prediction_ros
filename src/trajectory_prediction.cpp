@@ -155,8 +155,7 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
                                           const gtsam::Vector &start_vel,
                                           const gtsam::Vector &end_conf,
                                           const gtsam::Vector &end_vel,
-                                          const gtsam::Vector &pos_hsr,
-                                          const gtsam::Vector &vel_hsr,
+                                          const gtsam::Point3 obstacle_point,
                                           const bool add_goal_factors) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   graph_ = gtsam::NonlinearFactorGraph();
@@ -182,8 +181,6 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
   for (size_t i = 0; i < setting_.total_step; i++) {
     gtsam::Key pose_key = gtsam::Symbol('x', i);
     gtsam::Key vel_key = gtsam::Symbol('v', i);
-    gtsam::Key pose_key_hsr = gtsam::Symbol('y', i);
-    gtsam::Key vel_key_hsr = gtsam::Symbol('w', i);
 
     // start and end
     if (i == 0) {
@@ -191,45 +188,31 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
                                                    setting_.conf_prior_model));
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, start_vel,
                                                    setting_.vel_prior_model));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector>(pose_key_hsr, pos_hsr,
-                                                   setting_.conf_prior_model));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key_hsr, vel_hsr,
-                                                   setting_.vel_prior_model));
 
     } else if ((i == setting_.total_step - 1) && add_goal_factors) {
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(pose_key, end_conf,
                                                    setting_.conf_prior_model));
       graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key, end_vel,
                                                    setting_.vel_prior_model));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector>(pose_key_hsr, pos_hsr,
-                                                   setting_.conf_prior_model));
-      graph_.add(gtsam::PriorFactor<gtsam::Vector>(vel_key_hsr, vel_hsr,
-                                                   setting_.vel_prior_model));
     }
 
     if (i > 0) {
       gtsam::Key last_pose_key = gtsam::Symbol('x', i - 1);
       gtsam::Key last_vel_key = gtsam::Symbol('v', i - 1);
-      gtsam::Key last_pose_key_hsr = gtsam::Symbol('y', i - 1);
-      gtsam::Key last_vel_key_hsr = gtsam::Symbol('w', i - 1);
 
       // GP factor
       graph_.add(gpmp2::GaussianProcessPriorLinear(last_pose_key, last_vel_key,
                                                    pose_key, vel_key, delta_t_,
                                                    setting_.Qc_model));
-      graph_.add(gpmp2::GaussianProcessPriorLinear(
-          last_pose_key_hsr, last_vel_key_hsr, pose_key, vel_key, delta_t_,
-          setting_.Qc_model));
-
       // non-interpolated cost factor
       graph_.add(gpmp2::ObstaclePlanarSDFFactorPointRobot(
           pose_key, robot_, sdf_, setting_.cost_sigma, setting_.epsilon));
 
       // human-robot factor (we assume that a human is affected by robot's
       // movement and will try to avoid collision)
-      graph_.add(gpmp2::TwoAgentFactorPointRobot(pose_key, pose_key_hsr, robot_,
-                                                 setting_.cost_sigma,
-                                                 setting_.epsilon));
+      graph_.add(gpmp2::AgentAvoidanceFactorPointRobot(pose_key, robot_,
+                                                 0.1,
+                                                 setting_.epsilon + 0.3, obstacle_point));
 
       // interpolated cost factor
       if (setting_.obs_check_inter > 0) {
@@ -239,11 +222,10 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
               last_pose_key, last_vel_key, pose_key, vel_key, robot_, sdf_,
               setting_.cost_sigma, setting_.epsilon, setting_.Qc_model,
               delta_t_, tau));
-          graph_.add(gpmp2::TwoAgentFactorGPPointRobot(
-              last_pose_key, last_vel_key, pose_key, vel_key, last_pose_key_hsr,
-              last_vel_key_hsr, pose_key_hsr, vel_key_hsr, robot_,
-              setting_.cost_sigma, setting_.epsilon, setting_.Qc_model,
-              delta_t_, tau));
+          graph_.add(gpmp2::AgentAvoidanceFactorGPPointRobot(
+              last_pose_key, last_vel_key, pose_key, vel_key, robot_,
+              0.1, setting_.epsilon + 0.3, setting_.Qc_model,
+              delta_t_, tau, obstacle_point));
         }
       }
     }
@@ -267,9 +249,7 @@ void TrajectoryPrediction::pruneDetectionHistory() {
 }
 
 gtsam::Values TrajectoryPrediction::getInitTraj(const gtsam::Vector &start_conf,
-                                                const gtsam::Vector &end_conf,
-                                                const gtsam::Vector &pos_hsr,
-                                                const gtsam::Vector &vel_hsr) {
+                                                const gtsam::Vector &end_conf) {
   gtsam::Values init_values;
   
   gtsam::Vector avg_vel =
@@ -281,8 +261,6 @@ gtsam::Values TrajectoryPrediction::getInitTraj(const gtsam::Vector &start_conf,
 
     init_values.insert(gtsam::Symbol('x', i), pose);
     init_values.insert(gtsam::Symbol('v', i), avg_vel);
-    init_values.insert(gtsam::Symbol('y', i), pos_hsr);
-    init_values.insert(gtsam::Symbol('w', i), vel_hsr);
   }
 
   
@@ -453,13 +431,12 @@ void TrajectoryPrediction::plan() {
   gtsam::Vector2 end_conf(obstacle_goal[0], obstacle_goal[1]);
   gtsam::Vector2 start_vel(0.0, 0.0);
   gtsam::Vector2 end_vel(0.0, 0.0);
-  gtsam::Vector2 pos_hsr(robot_odom_state_[0], robot_odom_state_[1]); // get this from vicon reading of HSR's position
-  gtsam::Vector2 vel_hsr(0.0, 0.0);
+  gtsam::Point3 obstacle_position(robot_odom_state_[0], robot_odom_state_[1], 0); // get this from vicon reading of HSR's position
 
-  constructGraph(start_conf, start_vel, end_conf, end_vel, pos_hsr, vel_hsr, add_goal_factors);
+  constructGraph(start_conf, start_vel, end_conf, end_vel, obstacle_position, add_goal_factors);
 
   // Init values
-  gtsam::Values init_values = getInitTraj(start_conf, end_conf, pos_hsr, vel_hsr);
+  gtsam::Values init_values = getInitTraj(start_conf, end_conf);
   gtsam::Values result = optimize(init_values);
 
   // Publish a msg of the predicted human trajectory
