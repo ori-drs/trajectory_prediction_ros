@@ -10,6 +10,7 @@ int main(int argc, char **argv) {
 
   while (ros::ok()) {
     ros::spinOnce();
+    trajPred.plan();
     loop_rate.sleep();
   }
 

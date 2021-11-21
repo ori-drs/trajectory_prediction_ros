@@ -3,6 +3,18 @@
 
 <param name="goal_topic" type="string" value="/desired_goal" />
 <param name="predicted_traj_topic" type="string" value="/predicted_path" />
+<param name="distance_field_topic" type="string" value="/distance_field_2d" />
+<param name="resolution" type="double" value="0.05" />
+<param name="num_rows" type="int" value="300" />
+<param name="use_empty_distance_field" type="bool" value="false" />
+<param name="use_rgbd" type="bool" value="true" />
+
+<param name="person_position_topic" type="string" value="/rgbd_person_position" />
+
+        <!-- self._point_pub = rospy.Publisher("/rgbd_person_position", PointStamped, queue_size = 2) -->
+
+<!-- Global frame of the robot. In rosbags this is the vicon world frame -->
+<param name="global_frame" type="string" value="/vicon/world" />
 
 <arg name="use_rosbag" default="0" />
 <!-- <arg name="rosbag_path" default="$(find trajectory_prediction)/bags/merged_map4_run3.bag" /> -->
@@ -16,5 +28,7 @@
     <!-- <node pkg="rosbag" type="play" name="player" output="screen" args="$(rosbag_path)"/> -->
     <node pkg="rosbag" type="play" name="player" output="screen" args="/home/mark/HumanTrajectoryPredictionDataset/bags/merged_map4_run3.bag"/>
 </group>
+
+<node name="trajectory_prediction" pkg="trajectory_prediction" type="trajectory_prediction_node"/>
 
 </launch>

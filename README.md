@@ -35,4 +35,8 @@ which is a `PoseArray` that publishes the currently predicted trajectory obtaine
 
 
 
+### Launch commands
 
+roslaunch trajectory_prediction trajectory_prediction.launch global_frame:=odom use_empty_distance_field:=true
+roslaunch trajectory_prediction hsr_sim.launch global_frame:=odom use_empty_distance_field:=true
+<!-- rosrun  trajectory_prediction trajectory_prediction.launch global_frame:=odom use_empty_distance_field:=true -->
