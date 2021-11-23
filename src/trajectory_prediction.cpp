@@ -233,12 +233,13 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
 }
 
 void TrajectoryPrediction::pruneDetectionHistory() {
-  ros::Time t_now = ros::Time::now();
+  // ros::Time t_now = ros::Time::now();
+  ros::Time latest_t = detection_times_[detection_times_.size() - 1];
 
   for (size_t i = detection_times_.size() - 1; i > 0; i--) {
-    float diff = (t_now - detection_times_[i]).toSec();
+    float diff = (latest_t - detection_times_[i]).toSec();
 
-    if (diff > thresh_observed_t_secs_) {
+    if (diff > prune_t_secs) {
       detection_times_.erase(detection_times_.begin(),
                              detection_times_.begin() + i);
       detection_positions_.erase(detection_positions_.begin(),
@@ -369,7 +370,6 @@ bool TrajectoryPrediction::isLatestDetectionRecent() {
   // poses
   if (diff.toSec() > thresh_observed_t_secs_) {
     return false;
-    ;
   } else {
     return true;
   }

@@ -116,7 +116,8 @@ class TrajectoryPrediction {
   // std::array<std::array<double, 2>, 1> possible_goals_{{{{3, -2}}}};
   std::array<double, 2> latest_person_pose_;
   float thresh_observed_t_secs_ = 2.0;   // seconds
-  float min_required_history_t_ = 0.5;   // seconds
+  float prune_t_secs = 1.0;   // seconds
+  float min_required_history_t_ = 0.3;   // seconds
   float default_human_speed_ = 4.0;      // m/s
   float stationary_thresh_speed_ = 0.1;  // m/s
   float stationary_thresh_dist_ = 0.5;   // m/s
