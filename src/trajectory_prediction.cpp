@@ -157,19 +157,23 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
                                           const gtsam::Vector &end_vel,
                                           const gtsam::Point3 obstacle_point,
                                           const bool add_goal_factors) {
-  std::lock_guard<std::mutex> lock(data_mutex_);
+  
   graph_ = gtsam::NonlinearFactorGraph();
 
   if (!use_empty_distance_field_ && df_initialised_) {
+
     std::vector<double> vec_data(latest_msg_->data.begin(),
                                  latest_msg_->data.end());
     gtsam::Point2 origin(-(num_rows_ / 2.0) * resolution_,
                          -(num_rows_ / 2.0) * resolution_);
 
+    std::lock_guard<std::mutex> lock(data_mutex_);
+
     data_ = Eigen::Map<gtsam::Matrix>(
         &vec_data[0], num_rows_,
         num_rows_);  // Assume num_rows and num_cols are equal
     data_.transposeInPlace();
+
 
     sdf_ = gpmp2::PlanarSDF(origin, resolution_, data_);
   } else {
