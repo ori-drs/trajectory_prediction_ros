@@ -52,7 +52,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node) {
   }
 
   distance_field_sub_ =
-      node_.subscribe(distance_field_topic_, 1,
+      node_.subscribe(distance_field_topic_, 2,
                       &TrajectoryPrediction::distanceFieldCallback, this);
 
   robot_pos_sub_ =
@@ -123,8 +123,8 @@ void TrajectoryPrediction::createSettings(float total_time,
   setting_.setLM();
   setting_.set_total_step(total_step);
   setting_.set_total_time(total_step * delta_t_);
-  setting_.set_epsilon(0.3);
-  setting_.set_cost_sigma(0.2);
+  setting_.set_epsilon(0.1);
+  setting_.set_cost_sigma(0.4);
   setting_.set_obs_check_inter(3);
   setting_.set_conf_prior_model(0.001);
   setting_.set_vel_prior_model(0.001);
@@ -214,9 +214,9 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
 
       // human-robot factor (we assume that a human is affected by robot's
       // movement and will try to avoid collision)
-      graph_.add(gpmp2::AgentAvoidanceFactorPointRobot(pose_key, robot_,
-                                                 0.1,
-                                                 setting_.epsilon + 0.3, obstacle_point));
+      // graph_.add(gpmp2::AgentAvoidanceFactorPointRobot(pose_key, robot_,
+      //                                            0.1,
+      //                                            setting_.epsilon + 0.3, obstacle_point));
 
       // interpolated cost factor
       if (setting_.obs_check_inter > 0) {
@@ -226,10 +226,10 @@ void TrajectoryPrediction::constructGraph(const gtsam::Vector &start_conf,
               last_pose_key, last_vel_key, pose_key, vel_key, robot_, sdf_,
               setting_.cost_sigma, setting_.epsilon, setting_.Qc_model,
               delta_t_, tau));
-          graph_.add(gpmp2::AgentAvoidanceFactorGPPointRobot(
-              last_pose_key, last_vel_key, pose_key, vel_key, robot_,
-              0.1, setting_.epsilon + 0.3, setting_.Qc_model,
-              delta_t_, tau, obstacle_point));
+          // graph_.add(gpmp2::AgentAvoidanceFactorGPPointRobot(
+          //     last_pose_key, last_vel_key, pose_key, vel_key, robot_,
+          //     0.1, setting_.epsilon + 0.3, setting_.Qc_model,
+          //     delta_t_, tau, obstacle_point));
         }
       }
     }
@@ -383,10 +383,11 @@ void TrajectoryPrediction::plan() {
   // If people have not been detected or recently observed
   if (!person_detected_) {
     publishEmptyPrediction();
-    // ROS_INFO("No person has been detected yet.");
+    ROS_INFO("No person has been detected yet.");
     return;
   } else if (!isLatestDetectionRecent()) {
     // All history is too old so clear it
+    ROS_INFO("History is too old");
     detection_times_.clear();
     detection_positions_.clear();
     // ROS_INFO("No recent observation of a person.");
@@ -419,8 +420,7 @@ void TrajectoryPrediction::plan() {
   bool close_to_goal = (dist_to_goal < stationary_thresh_dist_);
 
   if (speed_stationary_bool || close_to_goal) {
-    // ROS_INFO("Stationary person detected. Stationary speed: %d \t Close to
-    // goal %d", (int) speed_stationary_bool, (int) close_to_goal);
+    ROS_INFO("Stationary person detected. Stationary speed: %d \t Close to goal %d", (int) speed_stationary_bool, (int) close_to_goal);
     publishStationaryTrajectory();
     publishDesiredGoal(latest_person_pose_);
     visualiseStationaryPath();
@@ -444,8 +444,6 @@ void TrajectoryPrediction::plan() {
   gtsam::Values result = optimize(init_values);
 
   // Publish a msg of the predicted human trajectory
-  // ROS_INFO("Moving person detecting. Publishing prediction.");
-
   publishPredictedTrajectory(result);
 
   publishDesiredGoal(obstacle_goal);

@@ -125,7 +125,14 @@ class TrajectoryPrediction {
   std::vector<ros::Time> detection_times_;
   std::vector<std::array<double, 2>> detection_positions_;
 
-  std::array<std::array<double, 2>, 2> possible_goals_{{{{5, -2}}, {{-1.0, 0}}}};
+    // Most of the experiments
+  std::array<std::array<double, 2>, 1> possible_goals_{{{{-1, 0}}}};
+  
+    //   For multi-goal experiment
+//   std::array<std::array<double, 2>, 2> possible_goals_{{
+//                                                         {{0, 0}},
+//                                                         {{1.85, -1}}
+//                                                       }};
 
   std::array<double, 2> pose_past_ = {0, 0};
 
