@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>trajectory_prediction_ros</name>
+  <name>trajectory_prediction</name>
   <version>0.0.0</version>
   <description>The trajectory_prediction package</description>
   <maintainer email="mfinean@robots.ox.ac.uk">Mark Finean</maintainer>
