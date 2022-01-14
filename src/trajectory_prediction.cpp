@@ -7,8 +7,11 @@ float constrainAngle(float x) {
   return x - M_PI;
 }
 
-TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node) {
+
+
+TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node, int prediction_mode) {
   node_ = node;
+  prediction_mode_ = prediction_mode;
 
   ROS_INFO("Initialising trajectory prediction node.");
 
@@ -35,7 +38,7 @@ TrajectoryPrediction::TrajectoryPrediction(ros::NodeHandle node) {
   node_.param<double>("obstacle_delta_t", delta_t_, 0.5);
 
   df_initialised_ = false;
-
+  
   gpmp2::BodySphereVector body_spheres;
   body_spheres.push_back(gpmp2::BodySphere(0, 0.6, Point3(0, 0, 0)));
   robot_ = gpmp2::RobotModel<gpmp2::PointRobot>(gpmp2::PointRobot(2, 1),
@@ -123,7 +126,8 @@ void TrajectoryPrediction::createSettings(float total_time,
   setting_.setLM();
   setting_.set_total_step(total_step);
   setting_.set_total_time(total_step * delta_t_);
-  setting_.set_epsilon(0.1);
+  // setting_.set_epsilon(0.1); // day 1
+  setting_.set_epsilon(0.3);
   setting_.set_cost_sigma(0.4);
   setting_.set_obs_check_inter(3);
   setting_.set_conf_prior_model(0.001);
@@ -251,6 +255,26 @@ void TrajectoryPrediction::pruneDetectionHistory() {
       break;
     }
   }
+}
+
+gtsam::Values TrajectoryPrediction::getCVMTraj(const gtsam::Vector &start_conf, const float speed) {
+
+  pose_past_ = detection_positions_.front();
+
+  double human_ori = std::atan2(latest_person_pose_[1] - pose_past_[1], 
+                                latest_person_pose_[0] - pose_past_[0]);
+
+  int num_steps = 30;
+
+  gtsam::Values init_values;
+  
+  for (size_t i = 0; i < num_steps; i++) {
+    gtsam::Vector pose = start_conf + 
+                        (i * delta_t_ * speed) * gtsam::Vector2(cos(human_ori), sin(human_ori));
+    init_values.insert(gtsam::Symbol('x', i), pose);
+  }
+
+  return init_values;
 }
 
 gtsam::Values TrajectoryPrediction::getInitTraj(const gtsam::Vector &start_conf,
@@ -403,52 +427,69 @@ void TrajectoryPrediction::plan() {
   // is long enough, this will be an avg, otherwise a default value
   float obstacle_speed = getObstacleSpeed();
 
-  // Now we perform intention recognition and determine the goal
-  float dist_to_goal = 0;
-  std::array<double, 2> obstacle_goal = getIntendedGoal(dist_to_goal);
-  bool add_goal_factors =
-      true;  // TODO - determine this based on how certain we are about the goal
+  switch(prediction_mode_){
 
-  ROS_INFO("Obstacle speed: %0.2f", obstacle_speed);
-  // ROS_INFO("Obstacle speed: %0.2f \t Goal: (%0.2f,%0.2f)", obstacle_speed,
-  // obstacle_goal[0], obstacle_goal[1]); ROS_INFO("Goal: (%0.2f,%0.2f)",
-  // obstacle_speed, obstacle_goal[0], obstacle_goal[1]);
+    case MP_MODE:{
+      ROS_INFO("Using MP_MODE");
 
-  // If the speed is very low, assume the person is stationary
-  // If person is very close to a goal, assume stationary
-  bool speed_stationary_bool = (obstacle_speed < stationary_thresh_speed_);
-  bool close_to_goal = (dist_to_goal < stationary_thresh_dist_);
+      // Now we perform intention recognition and determine the goal
+      float dist_to_goal = 0;
+      std::array<double, 2> obstacle_goal = getIntendedGoal(dist_to_goal);
+      bool add_goal_factors =
+          true;  // TODO - determine this based on how certain we are about the goal
 
-  if (speed_stationary_bool || close_to_goal) {
-    ROS_INFO("Stationary person detected. Stationary speed: %d \t Close to goal %d", (int) speed_stationary_bool, (int) close_to_goal);
-    publishStationaryTrajectory();
-    publishDesiredGoal(latest_person_pose_);
-    visualiseStationaryPath();
-    return;
+      ROS_INFO("Obstacle speed: %0.2f", obstacle_speed);
+      // ROS_INFO("Obstacle speed: %0.2f \t Goal: (%0.2f,%0.2f)", obstacle_speed,
+      // obstacle_goal[0], obstacle_goal[1]); ROS_INFO("Goal: (%0.2f,%0.2f)",
+      // obstacle_speed, obstacle_goal[0], obstacle_goal[1]);
+
+      // If the speed is very low, assume the person is stationary
+      // If person is very close to a goal, assume stationary
+      bool speed_stationary_bool = (obstacle_speed < stationary_thresh_speed_);
+      bool close_to_goal = (dist_to_goal < stationary_thresh_dist_);
+
+      if (speed_stationary_bool || close_to_goal) {
+        ROS_INFO("Stationary person detected. Stationary speed: %d \t Close to goal %d", (int) speed_stationary_bool, (int) close_to_goal);
+        publishStationaryTrajectory();
+        publishDesiredGoal(latest_person_pose_);
+        visualiseStationaryPath();
+        return;
+      }
+
+      // With the speed of the obstacle/human and the intended goal
+      // we can now estimate the factor graph params
+      reestimateTrajectoryParams(obstacle_speed, obstacle_goal, dist_to_goal);
+
+      gtsam::Vector2 start_conf(latest_person_pose_[0], latest_person_pose_[1]);
+      gtsam::Vector2 end_conf(obstacle_goal[0], obstacle_goal[1]);
+      gtsam::Vector2 start_vel(0.0, 0.0);
+      gtsam::Vector2 end_vel(0.0, 0.0);
+      gtsam::Point3 obstacle_position(robot_odom_state_[0], robot_odom_state_[1], 0); // get this from vicon reading of HSR's position
+
+      constructGraph(start_conf, start_vel, end_conf, end_vel, obstacle_position, add_goal_factors);
+
+      // Init values
+      gtsam::Values init_values = getInitTraj(start_conf, end_conf);
+      gtsam::Values result = optimize(init_values);
+
+      // Publish a msg of the predicted human trajectory
+      publishPredictedTrajectory(result);
+      publishDesiredGoal(obstacle_goal);
+      visualisePrediction(result, setting_.total_step);
+      break;
+    }
+    case CVM_MODE:{
+      ROS_INFO("Using CVM_MODE");
+      gtsam::Vector2 start_conf(latest_person_pose_[0], latest_person_pose_[1]);
+      gtsam::Values result = getCVMTraj(start_conf, obstacle_speed);
+      publishPredictedTrajectory(result);
+      visualisePrediction(result, 30);
+      break;
+    }
+
+
   }
 
-  // With the speed of the obstacle/human and the intended goal
-  // we can now estimate the factor graph params
-  reestimateTrajectoryParams(obstacle_speed, obstacle_goal, dist_to_goal);
-
-  gtsam::Vector2 start_conf(latest_person_pose_[0], latest_person_pose_[1]);
-  gtsam::Vector2 end_conf(obstacle_goal[0], obstacle_goal[1]);
-  gtsam::Vector2 start_vel(0.0, 0.0);
-  gtsam::Vector2 end_vel(0.0, 0.0);
-  gtsam::Point3 obstacle_position(robot_odom_state_[0], robot_odom_state_[1], 0); // get this from vicon reading of HSR's position
-
-  constructGraph(start_conf, start_vel, end_conf, end_vel, obstacle_position, add_goal_factors);
-
-  // Init values
-  gtsam::Values init_values = getInitTraj(start_conf, end_conf);
-  gtsam::Values result = optimize(init_values);
-
-  // Publish a msg of the predicted human trajectory
-  publishPredictedTrajectory(result);
-
-  publishDesiredGoal(obstacle_goal);
-
-  visualisePrediction(result, setting_.total_step);
 }
 
 gtsam::Values TrajectoryPrediction::optimize(

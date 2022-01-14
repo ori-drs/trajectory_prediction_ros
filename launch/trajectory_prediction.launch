@@ -9,6 +9,9 @@
 <param name="use_empty_distance_field" type="bool" value="false" />
 <param name="use_rgbd" type="bool" value="true" />
 
+<!-- CVM = 0, MotionPlanning = 1 -->
+<param name="prediction_mode" type="int" value="1" /> 
+
 <param name="person_position_topic" type="string" value="/rgbd_person_position" />
 
         <!-- self._point_pub = rospy.Publisher("/rgbd_person_position", PointStamped, queue_size = 2) -->

@@ -43,13 +43,15 @@
 
 #include <mutex>
 
+enum PredictionMode {CVM_MODE = 0, MP_MODE = 1};
+
 // Constrain angles between -pi and pi
 float constrainAngle(float x);
 
 class TrajectoryPrediction {
  public:
   // TrajectoryPrediction() {}
-  TrajectoryPrediction(ros::NodeHandle node);
+  TrajectoryPrediction(ros::NodeHandle node, int prediction_mode = MP_MODE);
 
   ~TrajectoryPrediction() {}
 
@@ -78,6 +80,7 @@ class TrajectoryPrediction {
                       const gtsam::Point3 obstacle_point,
                       const bool add_goal_factors);
   void plan();
+  gtsam::Values getCVMTraj(const gtsam::Vector &start_conf, const float speed);
 
   gtsam::Values getInitTraj(const gtsam::Vector &start_conf,
                             const gtsam::Vector &end_conf);
@@ -111,6 +114,8 @@ class TrajectoryPrediction {
   //                                                     {{1.6, -3}},
   //                                                     {{-0.73, -2.4}},
   //                                                     {{-1.82, 0.62}}}};
+
+  int prediction_mode_;
 
   // Intention
   // std::array<std::array<double, 2>, 1> possible_goals_{{{{3, -2}}}};
