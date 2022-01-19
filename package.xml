@@ -9,10 +9,7 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>control_msgs</depend>
- 
+  <depend>gpmp2</depend>
+
   <buildtool_depend>catkin</buildtool_depend>
-
-  <export>
-
-  </export>
 </package>
