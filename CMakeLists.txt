@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(trajectory_prediction)
 
 ## Find catkin and any catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp std_msgs finean_msgs)
+find_package(catkin REQUIRED COMPONENTS roscpp std_msgs)
 find_package(GTSAM REQUIRED)
 include_directories(${GTSAM_INCLUDE_DIR})
 find_package(gpmp2 REQUIRED)
@@ -20,7 +20,6 @@ target_link_libraries(trajectory_prediction
     gtsam       
     gpmp2 
     ${catkin_LIBRARIES}
-    ${finean_msgs_LIBRARIES}
     )
 
 include_directories(

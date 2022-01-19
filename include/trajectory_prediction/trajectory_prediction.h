@@ -31,8 +31,6 @@
 #ifndef TRAJECTORY_PREDICTION_H
 #define TRAJECTORY_PREDICTION_H
 
-#include <finean_msgs/PersonPosition.h>
-#include <finean_msgs/PersonPositions.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>

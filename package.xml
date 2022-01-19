@@ -9,7 +9,6 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>control_msgs</depend>
-  <depend>finean_msgs</depend>
  
   <buildtool_depend>catkin</buildtool_depend>
 
